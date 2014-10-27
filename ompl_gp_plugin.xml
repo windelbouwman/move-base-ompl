@@ -1,0 +1,7 @@
+<library path="lib/libompl_global_planner">
+  <class name="ompl_global_planner/GlobalPlanner" type="ompl_global_planner::GlobalPlanner" base_class_type="nav_core::BaseGlobalPlanner">
+    <description>
+      OMPL global planner
+    </description>
+  </class>
+</library>
