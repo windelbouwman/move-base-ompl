@@ -29,7 +29,7 @@
   <run_depend>roscpp</run_depend>
   <run_depend>tf</run_depend>
   <export>
-      <nav_core plugin="${prefix}/ompl_plugin.xml" />
+      <nav_core plugin="${prefix}/ompl_gp_plugin.xml" />
   </export>
 
 </package>
