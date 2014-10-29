@@ -51,6 +51,13 @@
 #include <nav_core/base_global_planner.h>
 #include <nav_msgs/GetPlan.h>
 
+#include <ompl/base/spaces/SE2StateSpace.h>
+#include <ompl/control/planners/rrt/RRT.h>
+#include <ompl/control/spaces/RealVectorControlSpace.h>
+#include <ompl/control/SimpleSetup.h>
+
+namespace ob = ompl::base;
+namespace oc = ompl::control;
 
 namespace ompl_global_planner {
 
@@ -68,6 +75,9 @@ class OmplGlobalPlanner : public nav_core::BaseGlobalPlanner
 
         ~OmplGlobalPlanner() {
         }
+
+        // Ompl related functions:
+        void propagate(const ob::State *start, const oc::Control *control, const double duration, ob::State *result);
 
     private:
         costmap_2d::Costmap2D* _costmap;

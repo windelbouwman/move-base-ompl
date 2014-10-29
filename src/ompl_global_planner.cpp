@@ -37,6 +37,14 @@
  * Modificator: Windel Bouwman
  *********************************************************************/
 
+/*
+
+    Greatly copied from:
+
+    http://ompl.kavrakilab.org/RigidBodyPlanningWithControls_8cpp_source.html
+
+*/
+
 #include <ompl_global_planner.h>
 #include <pluginlib/class_list_macros.h>
 #include <tf/transform_listener.h>
@@ -79,6 +87,42 @@ void OmplGlobalPlanner::initialize(std::string name, costmap_2d::Costmap2DROS* c
 
 }
 
+// Check the current state:
+bool isStateValid(const oc::SpaceInformation *si, const ob::State *state)
+{
+    const ob::SE2StateSpace::StateType *se2state = state->as<ob::SE2StateSpace::StateType>();
+
+    const ob::RealVectorStateSpace::StateType *pos = se2state->as<ob::RealVectorStateSpace::StateType>(0);
+
+    if (!si->satisfiesBounds(state))
+    {
+        return false;
+    }
+
+    return true;
+}
+
+void OmplGlobalPlanner::propagate(const ob::State *start, const oc::Control *control, const double duration, ob::State *result)
+{
+    // Implement vehicle dynamics:
+    const ob::SE2StateSpace::StateType *se2state = start->as<ob::SE2StateSpace::StateType>();
+
+    const double* pos = se2state->as<ob::RealVectorStateSpace::StateType>(0)->values;
+    const double rot = se2state->as<ob::SO2StateSpace::StateType>(1)->value;
+    const double* ctrl = control->as<oc::RealVectorControlSpace::ControlType>()->values;
+
+    // TODO: elaborate further..
+    result->as<ob::SE2StateSpace::StateType>()->setXY(
+        pos[0] + ctrl[0] * duration * cos(rot),
+        pos[1] + ctrl[1] * duration * sin(rot)
+    );
+
+    result->as<ob::SE2StateSpace::StateType>()->setYaw(
+        rot + ctrl[1] * duration
+    );
+
+}
+
 
 bool OmplGlobalPlanner::makePlan(const geometry_msgs::PoseStamped& start, const geometry_msgs::PoseStamped& goal,
                            std::vector<geometry_msgs::PoseStamped>& plan)
@@ -116,6 +160,39 @@ bool OmplGlobalPlanner::makePlan(const geometry_msgs::PoseStamped& start, const 
     tf::Stamped<tf::Pose> start_pose;
     tf::poseStampedMsgToTF(start, start_pose);
 
+    ROS_INFO("Thinking about OMPL path..");
+    // Create OMPL problem:
+    ob::StateSpacePtr space(new ob::SE2StateSpace());
+    ob::RealVectorBounds bounds(2);
+    bounds.setLow(-10);
+    bounds.setHigh(10);
+    space->as<ob::SE2StateSpace>()->setBounds(bounds);
+
+    oc::ControlSpacePtr cspace(new oc::RealVectorControlSpace(space, 2));
+    ob::RealVectorBounds cbounds(2);
+    cbounds.setLow(-0.4);
+    cbounds.setHigh(0.3);
+    cspace->as<oc::RealVectorControlSpace>()->setBounds(cbounds);
+
+    oc::SimpleSetup ss(cspace);
+    ss.setStatePropagator(boost::bind(&OmplGlobalPlanner::propagate, this, _1, _2, _3,_4));
+
+    ob::ScopedState<ob::SE2StateSpace> ompl_start(space);
+    ompl_start->setX(0);
+    ompl_start->setY(0);
+    ompl_start->setYaw(0);
+
+    ob::ScopedState<ob::SE2StateSpace> ompl_goal(space);
+    ompl_goal->setX(0);
+    ompl_goal->setY(0);
+    ompl_goal->setYaw(0);
+
+    ss.setStartAndGoalStates(ompl_start, ompl_goal, 0.05);
+
+    ob::PlannerStatus solved = ss.solve(10.0);
+
+    ROS_INFO("Ompl done!");
+    // Create path:
     // Add a line for now:
     plan.push_back(start);
 

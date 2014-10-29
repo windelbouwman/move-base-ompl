@@ -13,6 +13,8 @@ find_package(catkin REQUIRED
     tf
 )
 
+find_package(OMPL REQUIRED)
+
 catkin_package(
   INCLUDE_DIRS include
   LIBRARIES ompl_global_planner_lib
