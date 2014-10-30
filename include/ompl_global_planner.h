@@ -50,6 +50,7 @@
 #include <tf/transform_datatypes.h>
 #include <nav_core/base_global_planner.h>
 #include <nav_msgs/GetPlan.h>
+#include <base_local_planner/costmap_model.h>
 
 #include <ompl/base/spaces/SE2StateSpace.h>
 #include <ompl/control/planners/rrt/RRT.h>
@@ -58,6 +59,7 @@
 
 namespace ob = ompl::base;
 namespace oc = ompl::control;
+namespace og = ompl::geometric;
 
 namespace ompl_global_planner {
 
@@ -78,9 +80,10 @@ class OmplGlobalPlanner : public nav_core::BaseGlobalPlanner
 
         // Ompl related functions:
         void propagate(const ob::State *start, const oc::Control *control, const double duration, ob::State *result);
+        bool isStateValid(const oc::SpaceInformation *si, const ob::State *state);
 
     private:
-        costmap_2d::Costmap2D* _costmap;
+        costmap_2d::Costmap2DROS* _costmap_ros;
         std::string _frame_id;
         ros::Publisher _plan_pub;
         bool _initialized;
@@ -88,6 +91,8 @@ class OmplGlobalPlanner : public nav_core::BaseGlobalPlanner
 
         std::string tf_prefix_;
         boost::mutex _mutex;
+        ob::StateSpacePtr _space; 
+        base_local_planner::CostmapModel* _costmap_model;
 };
 
 }

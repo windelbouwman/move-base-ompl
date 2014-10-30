@@ -12,6 +12,7 @@ find_package(catkin REQUIRED
     pluginlib
     roscpp
     tf
+    base_local_planner
 )
 
 find_package(OMPL REQUIRED)

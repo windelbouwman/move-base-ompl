@@ -58,7 +58,9 @@ namespace ompl_global_planner
 
 
 OmplGlobalPlanner::OmplGlobalPlanner() :
-        _costmap(NULL), _initialized(false), _allow_unknown(true)
+        _costmap_ros(NULL), _initialized(false), _allow_unknown(true),
+        _space(new ob::SE2StateSpace()),
+        _costmap_model(NULL)
 {
 }
 
@@ -67,8 +69,9 @@ void OmplGlobalPlanner::initialize(std::string name, costmap_2d::Costmap2DROS* c
     if (!_initialized)
     {
         ros::NodeHandle private_nh("~/" + name);
-        _costmap = costmap_ros->getCostmap();
+        _costmap_ros = costmap_ros;
         _frame_id = "map";
+        _costmap_model = new base_local_planner::CostmapModel(*_costmap_ros->getCostmap());
 
         _plan_pub = private_nh.advertise<nav_msgs::Path>("plan", 1);
         private_nh.param("allow_unknown", _allow_unknown, true);
@@ -88,15 +91,30 @@ void OmplGlobalPlanner::initialize(std::string name, costmap_2d::Costmap2DROS* c
 }
 
 // Check the current state:
-bool isStateValid(const oc::SpaceInformation *si, const ob::State *state)
+bool OmplGlobalPlanner::isStateValid(const oc::SpaceInformation *si, const ob::State *state)
 {
     const ob::SE2StateSpace::StateType *se2state = state->as<ob::SE2StateSpace::StateType>();
-
-    const ob::RealVectorStateSpace::StateType *pos = se2state->as<ob::RealVectorStateSpace::StateType>(0);
+    const double* pos = se2state->as<ob::RealVectorStateSpace::StateType>(0)->values;
+    const double rot = se2state->as<ob::SO2StateSpace::StateType>(1)->value;
 
     if (!si->satisfiesBounds(state))
     {
         return false;
+    }
+
+    // Get the cost of the footprint at the current location:
+    double cost = _costmap_model->footprintCost(pos[0], pos[1], rot, _costmap_ros->getRobotFootprint());
+
+    // std::cout << cost << std::endl;
+    // Too high cost:
+    if (cost > 240)
+    {
+        return false;
+    }
+
+    // Error? Unknown space?
+    if (cost < 0)
+    {
     }
 
     return true;
@@ -106,21 +124,23 @@ void OmplGlobalPlanner::propagate(const ob::State *start, const oc::Control *con
 {
     // Implement vehicle dynamics:
     const ob::SE2StateSpace::StateType *se2state = start->as<ob::SE2StateSpace::StateType>();
-
     const double* pos = se2state->as<ob::RealVectorStateSpace::StateType>(0)->values;
     const double rot = se2state->as<ob::SO2StateSpace::StateType>(1)->value;
     const double* ctrl = control->as<oc::RealVectorControlSpace::ControlType>()->values;
 
     // TODO: elaborate further..
-    result->as<ob::SE2StateSpace::StateType>()->setXY(
-        pos[0] + ctrl[0] * duration * cos(rot),
-        pos[1] + ctrl[1] * duration * sin(rot)
-    );
+    result->as<ob::SE2StateSpace::StateType>()->setX(pos[0] + ctrl[0] * duration * cos(rot));
+    result->as<ob::SE2StateSpace::StateType>()->setY(pos[1] + ctrl[0] * duration * sin(rot));
 
-    result->as<ob::SE2StateSpace::StateType>()->setYaw(
-        rot + ctrl[1] * duration
-    );
+    double vehicle_length = 0.4;
+    double lengthInv = 1 / vehicle_length;
+    double omega = ctrl[0] * lengthInv * tan(ctrl[1]);
+    result->as<ob::SE2StateSpace::StateType>()->setYaw( rot + omega * duration );
 
+    // Make sure angle is (-pi,pi]:
+    const ob::SO2StateSpace* SO2 = _space->as<ob::SE2StateSpace>()->as<ob::SO2StateSpace>(1);
+    ob::SO2StateSpace::StateType* so2 = result->as<ob::SE2StateSpace::StateType>()->as<ob::SO2StateSpace::StateType>(1);
+    SO2->enforceBounds(so2);
 }
 
 
@@ -162,43 +182,75 @@ bool OmplGlobalPlanner::makePlan(const geometry_msgs::PoseStamped& start, const 
 
     ROS_INFO("Thinking about OMPL path..");
     // Create OMPL problem:
-    ob::StateSpacePtr space(new ob::SE2StateSpace());
     ob::RealVectorBounds bounds(2);
     bounds.setLow(-10);
     bounds.setHigh(10);
-    space->as<ob::SE2StateSpace>()->setBounds(bounds);
+    _space->as<ob::SE2StateSpace>()->setBounds(bounds);
 
-    oc::ControlSpacePtr cspace(new oc::RealVectorControlSpace(space, 2));
+    oc::ControlSpacePtr cspace(new oc::RealVectorControlSpace(_space, 2));
     ob::RealVectorBounds cbounds(2);
-    cbounds.setLow(-0.4);
-    cbounds.setHigh(0.3);
+    cbounds.setLow(0, -0.1);
+    cbounds.setHigh(0, 0.6);
+    cbounds.setLow(1, -0.5);
+    cbounds.setHigh(1, 0.5);
     cspace->as<oc::RealVectorControlSpace>()->setBounds(cbounds);
 
+    // Create a simple setup:
     oc::SimpleSetup ss(cspace);
     ss.setStatePropagator(boost::bind(&OmplGlobalPlanner::propagate, this, _1, _2, _3,_4));
+    ss.setStateValidityChecker(boost::bind(&OmplGlobalPlanner::isStateValid, this, ss.getSpaceInformation().get(), _1));
 
-    ob::ScopedState<ob::SE2StateSpace> ompl_start(space);
-    ompl_start->setX(0);
-    ompl_start->setY(0);
-    ompl_start->setYaw(0);
+    // Define problem:
+    ob::ScopedState<ob::SE2StateSpace> ompl_start(_space);
+    ompl_start->setX(start.pose.position.x);
+    ompl_start->setY(start.pose.position.y);
+    ompl_start->setYaw(start.pose.ori);
 
-    ob::ScopedState<ob::SE2StateSpace> ompl_goal(space);
-    ompl_goal->setX(0);
-    ompl_goal->setY(0);
+    ob::ScopedState<ob::SE2StateSpace> ompl_goal(_space);
+    ompl_goal->setX(goal.pose.position.x);
+    ompl_goal->setY(goal.pose.position.y);
     ompl_goal->setYaw(0);
 
     ss.setStartAndGoalStates(ompl_start, ompl_goal, 0.05);
 
-    ob::PlannerStatus solved = ss.solve(10.0);
+    ob::PlannerStatus solved = ss.solve(2.0);
 
-    ROS_INFO("Ompl done!");
-    // Create path:
-    // Add a line for now:
-    plan.push_back(start);
 
-    geometry_msgs::PoseStamped goal_copy = goal;
-    goal_copy.header.stamp = ros::Time::now();
-    plan.push_back(goal_copy);
+    // Convert path into ROS messages:
+    if (solved)
+    {
+        ROS_INFO("Ompl done!");
+        oc::PathControl& result_path = ss.getSolutionPath();
+        // result_path.interpolate(25);
+        result_path.printAsMatrix(std::cout);
+
+        // Create path:
+        plan.push_back(start);
+
+        // Conversion loop from states to messages:
+        std::vector<ob::State*>& result_states = result_path.getStates();
+        for (std::vector<ob::State*>::iterator it = result_states.begin(); it != result_states.end(); ++it)
+        {
+            // Get the data from the state:
+            ob::SE2StateSpace::StateType *se2state = (*it)->as<ob::SE2StateSpace::StateType>();
+            double* pos = se2state->as<ob::RealVectorStateSpace::StateType>(0)->values;
+            double rot = se2state->as<ob::SO2StateSpace::StateType>(1)->value;
+
+            // Place data into the pose:
+            geometry_msgs::PoseStamped ps = goal;
+            ps.header.stamp = ros::Time::now();
+            ps.pose.position.x = pos[0];
+            ps.pose.position.y = pos[1];
+            plan.push_back(ps);
+        }
+
+        plan.push_back(goal);
+    }
+    else
+    {
+        ROS_ERROR("Failed to determine plan");
+    }
+
 
     //publish the plan for visualization purposes
     publishPlan(plan);
