@@ -143,6 +143,14 @@ void OmplGlobalPlanner::propagate(const ob::State *start, const oc::Control *con
     SO2->enforceBounds(so2);
 }
 
+double calcYaw(const geometry_msgs::Pose pose)
+{
+    double yaw, pitch, roll;
+    tf::Pose pose_tf;
+    tf::poseMsgToTF(pose, pose_tf);
+    pose_tf.getBasis().getEulerYPR(yaw, pitch, roll);
+    return yaw;
+}
 
 bool OmplGlobalPlanner::makePlan(const geometry_msgs::PoseStamped& start, const geometry_msgs::PoseStamped& goal,
                            std::vector<geometry_msgs::PoseStamped>& plan)
@@ -195,40 +203,46 @@ bool OmplGlobalPlanner::makePlan(const geometry_msgs::PoseStamped& start, const 
     cbounds.setHigh(1, 0.5);
     cspace->as<oc::RealVectorControlSpace>()->setBounds(cbounds);
 
+    // Create space information:
+    oc::SpaceInformationPtr si(new oc::SpaceInformation(_space, cspace));
     // Create a simple setup:
-    oc::SimpleSetup ss(cspace);
-    ss.setStatePropagator(boost::bind(&OmplGlobalPlanner::propagate, this, _1, _2, _3,_4));
-    ss.setStateValidityChecker(boost::bind(&OmplGlobalPlanner::isStateValid, this, ss.getSpaceInformation().get(), _1));
+    si->setStatePropagator(boost::bind(&OmplGlobalPlanner::propagate, this, _1, _2, _3,_4));
+    si->setStateValidityChecker(boost::bind(&OmplGlobalPlanner::isStateValid, this, si.get(), _1));
 
     // Define problem:
     ob::ScopedState<ob::SE2StateSpace> ompl_start(_space);
     ompl_start->setX(start.pose.position.x);
     ompl_start->setY(start.pose.position.y);
-    ompl_start->setYaw(start.pose.ori);
+    ompl_start->setYaw(calcYaw(start.pose));
 
     ob::ScopedState<ob::SE2StateSpace> ompl_goal(_space);
     ompl_goal->setX(goal.pose.position.x);
     ompl_goal->setY(goal.pose.position.y);
-    ompl_goal->setYaw(0);
+    ompl_goal->setYaw(calcYaw(start.pose));
 
-    ss.setStartAndGoalStates(ompl_start, ompl_goal, 0.05);
+    ob::ProblemDefinitionPtr pdef(new ob::ProblemDefinition(si));
+    pdef->setStartAndGoalStates(ompl_start, ompl_goal, 0.05);
 
-    ob::PlannerStatus solved = ss.solve(2.0);
+    // oc::DecompositionPtr decomp(new My
+    ob::PlannerPtr planner(new oc::RRT(si));
+    planner->setProblemDefinition(pdef);
+    planner->setup();
+    ob::PlannerStatus solved = planner->solve(2.0);
 
 
     // Convert path into ROS messages:
     if (solved)
     {
         ROS_INFO("Ompl done!");
-        oc::PathControl& result_path = ss.getSolutionPath();
+        ob::PathPtr result_path = pdef->getSolutionPath();
         // result_path.interpolate(25);
-        result_path.printAsMatrix(std::cout);
+        result_path->print(std::cout);
 
         // Create path:
         plan.push_back(start);
 
         // Conversion loop from states to messages:
-        std::vector<ob::State*>& result_states = result_path.getStates();
+        std::vector<ob::State*>& result_states; // = result_path->getStates();
         for (std::vector<ob::State*>::iterator it = result_states.begin(); it != result_states.end(); ++it)
         {
             // Get the data from the state:
