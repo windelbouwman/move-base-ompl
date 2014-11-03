@@ -90,20 +90,28 @@ void OmplGlobalPlanner::initialize(std::string name, costmap_2d::Costmap2DROS* c
 
 }
 
-// Check the current state:
-bool OmplGlobalPlanner::isStateValid(const oc::SpaceInformation *si, const ob::State *state)
+double OmplGlobalPlanner::calc_cost(const ob::State *state)
 {
     const ob::SE2StateSpace::StateType *se2state = state->as<ob::SE2StateSpace::StateType>();
     const double* pos = se2state->as<ob::RealVectorStateSpace::StateType>(0)->values;
     const double rot = se2state->as<ob::SO2StateSpace::StateType>(1)->value;
 
+    // Get the cost of the footprint at the current location:
+    double cost = _costmap_model->footprintCost(pos[0], pos[1], rot, _costmap_ros->getRobotFootprint());
+
+    return cost;
+}
+
+// Check the current state:
+bool OmplGlobalPlanner::isStateValid(const oc::SpaceInformation *si, const ob::State *state)
+{
     if (!si->satisfiesBounds(state))
     {
         return false;
     }
 
     // Get the cost of the footprint at the current location:
-    double cost = _costmap_model->footprintCost(pos[0], pos[1], rot, _costmap_ros->getRobotFootprint());
+    double cost = calc_cost(state);
 
     // std::cout << cost << std::endl;
     // Too high cost:
@@ -218,6 +226,9 @@ bool OmplGlobalPlanner::makePlan(const geometry_msgs::PoseStamped& start, const 
     ompl_goal->setX(goal.pose.position.x);
     ompl_goal->setY(goal.pose.position.y);
     ompl_goal->setYaw(calcYaw(start.pose));
+
+    // Optimize criteria:
+    ob::OptimizationObjectivePtr objective(new CostMapObjective(*this, si));
 
     ob::ProblemDefinitionPtr pdef(new ob::ProblemDefinition(si));
     pdef->setStartAndGoalStates(ompl_start, ompl_goal, 0.1);

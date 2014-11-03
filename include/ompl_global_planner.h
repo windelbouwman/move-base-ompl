@@ -57,6 +57,7 @@
 #include <ompl/geometric/planners/rrt/RRTstar.h>
 #include <ompl/control/spaces/RealVectorControlSpace.h>
 #include <ompl/control/SimpleSetup.h>
+#include <ompl/base/objectives/StateCostIntegralObjective.h>
 
 namespace ob = ompl::base;
 namespace oc = ompl::control;
@@ -83,6 +84,8 @@ class OmplGlobalPlanner : public nav_core::BaseGlobalPlanner
         void propagate(const ob::State *start, const oc::Control *control, const double duration, ob::State *result);
         bool isStateValid(const oc::SpaceInformation *si, const ob::State *state);
 
+        double calc_cost(const ob::State*);
+
     private:
         costmap_2d::Costmap2DROS* _costmap_ros;
         std::string _frame_id;
@@ -94,6 +97,25 @@ class OmplGlobalPlanner : public nav_core::BaseGlobalPlanner
         boost::mutex _mutex;
         ob::StateSpacePtr _space; 
         base_local_planner::CostmapModel* _costmap_model;
+};
+
+
+class CostMapObjective : public ob::StateCostIntegralObjective
+{
+    public:
+    CostMapObjective(OmplGlobalPlanner& op, const ob::SpaceInformationPtr& si)
+        : ob::StateCostIntegralObjective(si, true),
+        _ompl_planner(op)
+    {
+    }
+
+    ob::Cost stateCost(const ob::State* s) const
+    {
+        return ob::Cost(_ompl_planner.calc_cost(s));
+    }
+
+    private:
+        OmplGlobalPlanner& _ompl_planner;
 };
 
 }
