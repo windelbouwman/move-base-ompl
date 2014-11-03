@@ -55,6 +55,10 @@
 #include <ompl/base/spaces/SE2StateSpace.h>
 #include <ompl/control/planners/rrt/RRT.h>
 #include <ompl/geometric/planners/rrt/RRTstar.h>
+#include <ompl/geometric/planners/prm/PRMstar.h>
+#include <ompl/geometric/planners/prm/PRM.h>
+#include <ompl/geometric/planners/rrt/RRTConnect.h>
+#include <ompl/geometric/planners/rrt/TRRT.h>
 #include <ompl/control/spaces/RealVectorControlSpace.h>
 #include <ompl/control/SimpleSetup.h>
 #include <ompl/base/objectives/StateCostIntegralObjective.h>
@@ -85,6 +89,8 @@ class OmplGlobalPlanner : public nav_core::BaseGlobalPlanner
         bool isStateValid(const oc::SpaceInformation *si, const ob::State *state);
 
         double calc_cost(const ob::State*);
+        void get_xy_theta_v(const ob::State* s, double& x, double& y, double& theta, double& velocity);
+        void set_xy_theta_v(ob::State*, double x, double y, double theta, double velocity);
 
     private:
         costmap_2d::Costmap2DROS* _costmap_ros;
@@ -95,8 +101,12 @@ class OmplGlobalPlanner : public nav_core::BaseGlobalPlanner
 
         std::string tf_prefix_;
         boost::mutex _mutex;
-        ob::StateSpacePtr _space; 
         base_local_planner::CostmapModel* _costmap_model;
+
+        // State spaces:
+        ob::StateSpacePtr _se2_space;
+        ob::StateSpacePtr _velocity_space;
+        ob::StateSpacePtr _space;
 };
 
 

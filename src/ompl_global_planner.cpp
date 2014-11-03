@@ -59,7 +59,9 @@ namespace ompl_global_planner
 
 OmplGlobalPlanner::OmplGlobalPlanner() :
         _costmap_ros(NULL), _initialized(false), _allow_unknown(true),
-        _space(new ob::SE2StateSpace()),
+        _se2_space(new ob::SE2StateSpace()),
+        _velocity_space(new ob::RealVectorStateSpace(1)),
+        _space(_se2_space + _velocity_space),
         _costmap_model(NULL)
 {
 }
@@ -90,14 +92,45 @@ void OmplGlobalPlanner::initialize(std::string name, costmap_2d::Costmap2DROS* c
 
 }
 
+void OmplGlobalPlanner::get_xy_theta_v(const ob::State *s, double& x, double& y, double& theta, double& v)
+{
+    const ob::CompoundStateSpace::StateType* compound_state = s->as<ob::CompoundStateSpace::StateType>();
+    const ob::SE2StateSpace::StateType* se2state = compound_state->as<ob::SE2StateSpace::StateType>(0);
+    const ob::RealVectorStateSpace::StateType* v_state = compound_state->as<ob::RealVectorStateSpace::StateType>(1);
+
+    // Get the values:
+    x = se2state->getX();
+    y = se2state->getY();
+    theta = se2state->getYaw();
+    v = (*v_state)[0];
+}
+
+// Store x,y and theta into state:
+void OmplGlobalPlanner::set_xy_theta_v(ob::State* rs, double x, double y, double theta, double v)
+{
+    ob::CompoundStateSpace::StateType* compound_state = rs->as<ob::CompoundStateSpace::StateType>();
+    ob::SE2StateSpace::StateType* se2state = compound_state->as<ob::SE2StateSpace::StateType>(0);
+    ob::RealVectorStateSpace::StateType* v_state = compound_state->as<ob::RealVectorStateSpace::StateType>(1);
+
+    // Set values:
+    se2state->setX(x);
+    se2state->setY(y);
+    se2state->setYaw(theta);
+    (*v_state)[0] = v;
+
+    // Make sure angle is (-pi,pi]:
+    const ob::SO2StateSpace* SO2 = _se2_space->as<ob::SE2StateSpace>()->as<ob::SO2StateSpace>(1);
+    ob::SO2StateSpace::StateType* so2 = se2state->as<ob::SO2StateSpace::StateType>(1);
+    SO2->enforceBounds(so2);
+}
+
 double OmplGlobalPlanner::calc_cost(const ob::State *state)
 {
-    const ob::SE2StateSpace::StateType *se2state = state->as<ob::SE2StateSpace::StateType>();
-    const double* pos = se2state->as<ob::RealVectorStateSpace::StateType>(0)->values;
-    const double rot = se2state->as<ob::SO2StateSpace::StateType>(1)->value;
+    double x, y, theta, velocity;
+    get_xy_theta_v(state, x, y, theta, velocity);
 
     // Get the cost of the footprint at the current location:
-    double cost = _costmap_model->footprintCost(pos[0], pos[1], rot, _costmap_ros->getRobotFootprint());
+    double cost = _costmap_model->footprintCost(x, y, theta, _costmap_ros->getRobotFootprint());
 
     return cost;
 }
@@ -128,27 +161,31 @@ bool OmplGlobalPlanner::isStateValid(const oc::SpaceInformation *si, const ob::S
     return true;
 }
 
-void OmplGlobalPlanner::propagate(const ob::State *start, const oc::Control *control, const double duration, ob::State *result)
+// Calculate vehicle dynamics, assume a velocity state, but steering to be instantly possibe.
+void OmplGlobalPlanner::propagate(const ob::State *start, const oc::Control *control, const double duration, ob::State* result)
 {
     // Implement vehicle dynamics:
-    const ob::SE2StateSpace::StateType *se2state = start->as<ob::SE2StateSpace::StateType>();
-    const double* pos = se2state->as<ob::RealVectorStateSpace::StateType>(0)->values;
-    const double rot = se2state->as<ob::SO2StateSpace::StateType>(1)->value;
-    const double* ctrl = control->as<oc::RealVectorControlSpace::ControlType>()->values;
+    double x, y, theta, velocity;
+    get_xy_theta_v(start, x, y, theta, velocity);
 
+    const double* ctrl = control->as<oc::RealVectorControlSpace::ControlType>()->values;
+    double acc = ctrl[0];
+    double steer_angle = ctrl[1];
+
+    // Calculate vehicle dynamics:
+    double x_n, y_n, theta_n, velocity_n;
     // TODO: elaborate further..
-    result->as<ob::SE2StateSpace::StateType>()->setX(pos[0] + ctrl[0] * duration * cos(rot));
-    result->as<ob::SE2StateSpace::StateType>()->setY(pos[1] + ctrl[0] * duration * sin(rot));
+    x_n = x + velocity * duration * cos(theta);
+    y_n = y + velocity * duration * sin(theta);
+    velocity_n = velocity + acc * duration;
 
     double vehicle_length = 0.4;
     double lengthInv = 1 / vehicle_length;
-    double omega = ctrl[0] * lengthInv * tan(ctrl[1]);
-    result->as<ob::SE2StateSpace::StateType>()->setYaw( rot + omega * duration );
+    double omega = velocity * lengthInv * tan(steer_angle);
+    theta_n = theta + omega * duration;
 
-    // Make sure angle is (-pi,pi]:
-    const ob::SO2StateSpace* SO2 = _space->as<ob::SE2StateSpace>()->as<ob::SO2StateSpace>(1);
-    ob::SO2StateSpace::StateType* so2 = result->as<ob::SE2StateSpace::StateType>()->as<ob::SO2StateSpace::StateType>(1);
-    SO2->enforceBounds(so2);
+    // Store new state in result:
+    set_xy_theta_v(result, x_n, y_n, theta_n, velocity_n);
 }
 
 double calcYaw(const geometry_msgs::Pose pose)
@@ -158,6 +195,13 @@ double calcYaw(const geometry_msgs::Pose pose)
     tf::poseMsgToTF(pose, pose_tf);
     pose_tf.getBasis().getEulerYPR(yaw, pitch, roll);
     return yaw;
+}
+
+void pose2state(const geometry_msgs::Pose& pose, ob::State* state)
+{
+    //ompl_start[0] = start.pose.position.x;
+    //ompl_start[1] = start.pose.position.y;
+    //ompl_start[2] = calcYaw(start.pose);
 }
 
 bool OmplGlobalPlanner::makePlan(const geometry_msgs::PoseStamped& start, const geometry_msgs::PoseStamped& goal,
@@ -201,7 +245,12 @@ bool OmplGlobalPlanner::makePlan(const geometry_msgs::PoseStamped& start, const 
     ob::RealVectorBounds bounds(2);
     bounds.setLow(-10);
     bounds.setHigh(10);
-    _space->as<ob::SE2StateSpace>()->setBounds(bounds);
+    _se2_space->as<ob::SE2StateSpace>()->setBounds(bounds);
+
+    ob::RealVectorBounds velocity_bounds(1);
+    velocity_bounds.setHigh(0.6);
+    velocity_bounds.setLow(-0.1);
+    _velocity_space->as<ob::RealVectorStateSpace>()->setBounds(velocity_bounds);
 
     oc::ControlSpacePtr cspace(new oc::RealVectorControlSpace(_space, 2));
     ob::RealVectorBounds cbounds(2);
@@ -217,25 +266,31 @@ bool OmplGlobalPlanner::makePlan(const geometry_msgs::PoseStamped& start, const 
     si->setStateValidityChecker(boost::bind(&OmplGlobalPlanner::isStateValid, this, si.get(), _1));
 
     // Define problem:
-    ob::ScopedState<ob::SE2StateSpace> ompl_start(_space);
-    ompl_start->setX(start.pose.position.x);
-    ompl_start->setY(start.pose.position.y);
-    ompl_start->setYaw(calcYaw(start.pose));
+    ob::ScopedState<> ompl_start(_space);
+    ompl_start[0] = start.pose.position.x;
+    ompl_start[1] = start.pose.position.y;
+    ompl_start[2] = calcYaw(start.pose);
 
-    ob::ScopedState<ob::SE2StateSpace> ompl_goal(_space);
-    ompl_goal->setX(goal.pose.position.x);
-    ompl_goal->setY(goal.pose.position.y);
-    ompl_goal->setYaw(calcYaw(start.pose));
+    ob::ScopedState<> ompl_goal(_space);
+    ompl_goal[0] = goal.pose.position.x;
+    ompl_goal[1] = goal.pose.position.y;
+    ompl_goal[2] = calcYaw(start.pose);
 
     // Optimize criteria:
     ob::OptimizationObjectivePtr objective(new CostMapObjective(*this, si));
 
     ob::ProblemDefinitionPtr pdef(new ob::ProblemDefinition(si));
     pdef->setStartAndGoalStates(ompl_start, ompl_goal, 0.1);
+    pdef->setOptimizationObjective(objective);
 
+    ROS_INFO("Problem defined, running planner");
     // oc::DecompositionPtr decomp(new My
     // ob::PlannerPtr planner(new oc::RRT(si));
-    ob::PlannerPtr planner(new og::RRTstar(si));
+    // ob::PlannerPtr planner(new og::RRTConnect(si));
+    // ob::PlannerPtr planner(new og::RRTstar(si));
+    // ob::PlannerPtr planner(new og::PRMstar(si));
+    // ob::PlannerPtr planner(new og::PRM(si)); // segfault
+    ob::PlannerPtr planner(new og::TRRT(si));
     planner->setProblemDefinition(pdef);
     planner->setup();
     ob::PlannerStatus solved = planner->solve(2.0);
@@ -250,7 +305,7 @@ bool OmplGlobalPlanner::makePlan(const geometry_msgs::PoseStamped& start, const 
         // Cast path into geometric path:
         og::PathGeometric& result_path = static_cast<og::PathGeometric&>(*result_path1);
 
-        result_path.interpolate(25);
+        result_path.interpolate(100);
         // result_path->print(std::cout);
 
         // Create path:
@@ -261,15 +316,14 @@ bool OmplGlobalPlanner::makePlan(const geometry_msgs::PoseStamped& start, const 
         for (std::vector<ob::State*>::iterator it = result_states.begin(); it != result_states.end(); ++it)
         {
             // Get the data from the state:
-            ob::SE2StateSpace::StateType *se2state = (*it)->as<ob::SE2StateSpace::StateType>();
-            double* pos = se2state->as<ob::RealVectorStateSpace::StateType>(0)->values;
-            double rot = se2state->as<ob::SO2StateSpace::StateType>(1)->value;
+            double x, y, theta, velocity;
+            get_xy_theta_v(*it, x, y, theta, velocity);
 
             // Place data into the pose:
             geometry_msgs::PoseStamped ps = goal;
             ps.header.stamp = ros::Time::now();
-            ps.pose.position.x = pos[0];
-            ps.pose.position.y = pos[1];
+            ps.pose.position.x = x;
+            ps.pose.position.y = y;
             plan.push_back(ps);
         }
 
