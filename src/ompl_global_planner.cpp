@@ -132,7 +132,25 @@ double OmplGlobalPlanner::calc_cost(const ob::State *state)
     // Get the cost of the footprint at the current location:
     double cost = _costmap_model->footprintCost(x, y, theta, _costmap_ros->getRobotFootprint());
 
+    if (cost < 0)
+    {
+        // Unknown cell, assume zero cost here!
+        cost = 0;
+    }
+
     return cost;
+}
+
+// Calculate the cost of a motion:
+double motion_cost(const ob::State* s1, const ob::State* s2)
+{
+    // int nd = validSegmentCount(s1, s2);
+    // TODO: interpolate?
+    double cst = 0;
+
+    // cst = 
+
+    return cst;
 }
 
 // Check the current state:
@@ -148,7 +166,7 @@ bool OmplGlobalPlanner::isStateValid(const oc::SpaceInformation *si, const ob::S
 
     // std::cout << cost << std::endl;
     // Too high cost:
-    if (cost > 240)
+    if (cost > 90)
     {
         return false;
     }
@@ -208,9 +226,9 @@ bool OmplGlobalPlanner::makePlan(const geometry_msgs::PoseStamped& start, const 
                            std::vector<geometry_msgs::PoseStamped>& plan)
 {
     boost::mutex::scoped_lock lock(_mutex);
-    if (!_initialized) {
-        ROS_ERROR(
-                "This planner has not been initialized yet, but it is being used, please call initialize() before use");
+    if (!_initialized)
+    {
+        ROS_ERROR("This planner has not been initialized yet, but it is being used, please call initialize() before use");
         return false;
     }
 
@@ -254,10 +272,10 @@ bool OmplGlobalPlanner::makePlan(const geometry_msgs::PoseStamped& start, const 
 
     oc::ControlSpacePtr cspace(new oc::RealVectorControlSpace(_space, 2));
     ob::RealVectorBounds cbounds(2);
-    cbounds.setLow(0, -0.1);
-    cbounds.setHigh(0, 0.6);
-    cbounds.setLow(1, -0.5);
-    cbounds.setHigh(1, 0.5);
+    cbounds.setLow(0, -0.04);
+    cbounds.setHigh(0, 0.3);
+    cbounds.setLow(1, -0.2);
+    cbounds.setHigh(1, 0.2);
     cspace->as<oc::RealVectorControlSpace>()->setBounds(cbounds);
 
     // Create space information:
@@ -270,30 +288,34 @@ bool OmplGlobalPlanner::makePlan(const geometry_msgs::PoseStamped& start, const 
     ompl_start[0] = start.pose.position.x;
     ompl_start[1] = start.pose.position.y;
     ompl_start[2] = calcYaw(start.pose);
+    ompl_start[3] = 0; // Speed
 
     ob::ScopedState<> ompl_goal(_space);
     ompl_goal[0] = goal.pose.position.x;
     ompl_goal[1] = goal.pose.position.y;
     ompl_goal[2] = calcYaw(start.pose);
+    ompl_goal[3] = 0; // Speed
 
     // Optimize criteria:
-    ob::OptimizationObjectivePtr objective(new CostMapObjective(*this, si));
+    ob::OptimizationObjectivePtr cost_objective(new CostMapObjective(*this, si));
+    ob::OptimizationObjectivePtr length_objective(new ob::PathLengthOptimizationObjective(si));
+    //ob::OptimizationObjectivePtr objective(new CostMapWorkObjective(*this, si));
 
     ob::ProblemDefinitionPtr pdef(new ob::ProblemDefinition(si));
     pdef->setStartAndGoalStates(ompl_start, ompl_goal, 0.1);
-    pdef->setOptimizationObjective(objective);
+    pdef->setOptimizationObjective(cost_objective + length_objective);
 
     ROS_INFO("Problem defined, running planner");
     // oc::DecompositionPtr decomp(new My
-    // ob::PlannerPtr planner(new oc::RRT(si));
+    // ob::PlannerPtr planner(new oc::LBTRRT(si));
     // ob::PlannerPtr planner(new og::RRTConnect(si));
-    // ob::PlannerPtr planner(new og::RRTstar(si));
-    // ob::PlannerPtr planner(new og::PRMstar(si));
+    ob::PlannerPtr planner(new og::RRTstar(si));
+    // ob::PlannerPtr planner(new og::PRMstar(si)); // works
     // ob::PlannerPtr planner(new og::PRM(si)); // segfault
-    ob::PlannerPtr planner(new og::TRRT(si));
+    // ob::PlannerPtr planner(new og::TRRT(si));
     planner->setProblemDefinition(pdef);
     planner->setup();
-    ob::PlannerStatus solved = planner->solve(2.0);
+    ob::PlannerStatus solved = planner->solve(3.0);
 
 
     // Convert path into ROS messages:
@@ -305,7 +327,7 @@ bool OmplGlobalPlanner::makePlan(const geometry_msgs::PoseStamped& start, const 
         // Cast path into geometric path:
         og::PathGeometric& result_path = static_cast<og::PathGeometric&>(*result_path1);
 
-        result_path.interpolate(100);
+        // result_path.interpolate(100);
         // result_path->print(std::cout);
 
         // Create path:

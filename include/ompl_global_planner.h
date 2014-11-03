@@ -62,6 +62,8 @@
 #include <ompl/control/spaces/RealVectorControlSpace.h>
 #include <ompl/control/SimpleSetup.h>
 #include <ompl/base/objectives/StateCostIntegralObjective.h>
+#include <ompl/base/objectives/MechanicalWorkOptimizationObjective.h>
+#include <ompl/base/objectives/PathLengthOptimizationObjective.h>
 
 namespace ob = ompl::base;
 namespace oc = ompl::control;
@@ -89,6 +91,7 @@ class OmplGlobalPlanner : public nav_core::BaseGlobalPlanner
         bool isStateValid(const oc::SpaceInformation *si, const ob::State *state);
 
         double calc_cost(const ob::State*);
+        double motion_cost(const ob::State* s1, const ob::State* s2);
         void get_xy_theta_v(const ob::State* s, double& x, double& y, double& theta, double& velocity);
         void set_xy_theta_v(ob::State*, double x, double y, double theta, double velocity);
 
@@ -119,10 +122,37 @@ class CostMapObjective : public ob::StateCostIntegralObjective
     {
     }
 
+    virtual ob::Cost stateCost(const ob::State* s) const
+    {
+        return ob::Cost(_ompl_planner.calc_cost(s));
+    }
+
+
+    private:
+        OmplGlobalPlanner& _ompl_planner;
+};
+
+
+class CostMapWorkObjective : public ob::MechanicalWorkOptimizationObjective
+{
+    public:
+    CostMapWorkObjective(OmplGlobalPlanner& op, const ob::SpaceInformationPtr& si)
+        : ob::MechanicalWorkOptimizationObjective(si),
+        _ompl_planner(op)
+    {
+    }
+
     ob::Cost stateCost(const ob::State* s) const
     {
         return ob::Cost(_ompl_planner.calc_cost(s));
     }
+
+    /*
+    ob::Cost motionCost(const ob::State* s1, const ob::State* s2) const
+    {
+        return ob::Cost(_ompl_planner.motion_cost(s1, s2));
+    }
+    */
 
     private:
         OmplGlobalPlanner& _ompl_planner;
