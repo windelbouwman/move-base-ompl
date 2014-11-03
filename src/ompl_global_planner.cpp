@@ -205,7 +205,6 @@ bool OmplGlobalPlanner::makePlan(const geometry_msgs::PoseStamped& start, const 
 
     // Create space information:
     oc::SpaceInformationPtr si(new oc::SpaceInformation(_space, cspace));
-    // Create a simple setup:
     si->setStatePropagator(boost::bind(&OmplGlobalPlanner::propagate, this, _1, _2, _3,_4));
     si->setStateValidityChecker(boost::bind(&OmplGlobalPlanner::isStateValid, this, si.get(), _1));
 
@@ -221,10 +220,11 @@ bool OmplGlobalPlanner::makePlan(const geometry_msgs::PoseStamped& start, const 
     ompl_goal->setYaw(calcYaw(start.pose));
 
     ob::ProblemDefinitionPtr pdef(new ob::ProblemDefinition(si));
-    pdef->setStartAndGoalStates(ompl_start, ompl_goal, 0.05);
+    pdef->setStartAndGoalStates(ompl_start, ompl_goal, 0.1);
 
     // oc::DecompositionPtr decomp(new My
-    ob::PlannerPtr planner(new oc::RRT(si));
+    // ob::PlannerPtr planner(new oc::RRT(si));
+    ob::PlannerPtr planner(new og::RRTstar(si));
     planner->setProblemDefinition(pdef);
     planner->setup();
     ob::PlannerStatus solved = planner->solve(2.0);
@@ -234,15 +234,19 @@ bool OmplGlobalPlanner::makePlan(const geometry_msgs::PoseStamped& start, const 
     if (solved)
     {
         ROS_INFO("Ompl done!");
-        ob::PathPtr result_path = pdef->getSolutionPath();
-        // result_path.interpolate(25);
-        result_path->print(std::cout);
+        ob::PathPtr result_path1 = pdef->getSolutionPath();
+
+        // Cast path into geometric path:
+        og::PathGeometric& result_path = static_cast<og::PathGeometric&>(*result_path1);
+
+        result_path.interpolate(25);
+        // result_path->print(std::cout);
 
         // Create path:
         plan.push_back(start);
 
         // Conversion loop from states to messages:
-        std::vector<ob::State*>& result_states; // = result_path->getStates();
+        std::vector<ob::State*>& result_states = result_path.getStates();
         for (std::vector<ob::State*>::iterator it = result_states.begin(); it != result_states.end(); ++it)
         {
             // Get the data from the state:

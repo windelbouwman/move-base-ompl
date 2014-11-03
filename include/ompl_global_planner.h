@@ -54,6 +54,7 @@
 
 #include <ompl/base/spaces/SE2StateSpace.h>
 #include <ompl/control/planners/rrt/RRT.h>
+#include <ompl/geometric/planners/rrt/RRTstar.h>
 #include <ompl/control/spaces/RealVectorControlSpace.h>
 #include <ompl/control/SimpleSetup.h>
 
