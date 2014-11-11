@@ -17,20 +17,20 @@ Usage
 
 To use this planner, check it out in your local catkin workspace:
 
-  $ cd ~/catkin_ws/src
-  $ git clone https://github.com/windelbouwman/move-base-ompl.git
-  $ cd ..
-  $ catkin_make
+    $ cd ~/catkin_ws/src
+    $ git clone https://github.com/windelbouwman/move-base-ompl.git
+    $ cd ..
+    $ catkin_make
 
 Now the planner should be placed as shared object in the devel/lib folder. Now you can use in 
 together with the move_base node.
 
 List the plugin with the command:
 
-  $ rospack plugins --attrib=plugin nav_core
+    $ rospack plugins --attrib=plugin nav_core
 
 
 Then use the plugin in your move_base_parameters.yaml file:
 
-  base_global_planner: ompl_global_planner/OmplGlobalPlanner
+    base_global_planner: ompl_global_planner/OmplGlobalPlanner
 
