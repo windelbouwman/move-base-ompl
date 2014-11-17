@@ -2,7 +2,6 @@ cmake_minimum_required(VERSION 2.8.3)
 project(move_base_ompl)
 
 find_package(catkin REQUIRED
-    OMPL
   COMPONENTS
     costmap_2d
     geometry_msgs
