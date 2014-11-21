@@ -51,7 +51,8 @@
 
 
 //register this planner as a BaseGlobalPlanner plugin
-PLUGINLIB_EXPORT_CLASS(ompl_global_planner::OmplGlobalPlanner, nav_core::BaseGlobalPlanner)
+//PLUGINLIB_EXPORT_CLASS(ompl_global_planner::OmplGlobalPlanner, nav_core::BaseGlobalPlanner)
+PLUGINLIB_DECLARE_CLASS(move_base_ompl, OmplGlobalPlanner, ompl_global_planner::OmplGlobalPlanner, nav_core::BaseGlobalPlanner);
 
 namespace ompl_global_planner
 {
