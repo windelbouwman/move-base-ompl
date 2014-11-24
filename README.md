@@ -3,6 +3,8 @@ move-base-ompl
 
 ROS move-base planner plugin using ompl
 
+[![Build Status](https://travis-ci.org/windelbouwman/move-base-ompl.svg)](https://travis-ci.org/windelbouwman/move-base-ompl)
+
 About
 -----
 
