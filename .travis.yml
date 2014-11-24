@@ -11,11 +11,12 @@ compiler:
 
 before_install:
   - export CI_SOURCE_PATH=$(pwd)
+  - lsb_release -a
   - sudo sh -c 'echo "deb http://packages.ros.org/ros/ubuntu precise main" > /etc/apt/sources.list.d/ros-latest.list'
   - wget http://packages.ros.org/ros.key -O - | sudo apt-key add -
   - sudo apt-get update -qq
-  - sudo apt-get install ros-indigo-ros-base
-  - sudo apt-get install ros-indigo-move-base
+  - sudo apt-get install ros-hydro-ros-base
+  - sudo apt-get install ros-hydro-move-base
   - sudo apt-get install python-catkin-pkg python-empy python-rospkg
   - pip install catkin_pkg
   - pip install rospkg
@@ -23,7 +24,7 @@ before_install:
   - rosdep update
 install:
   # make a workspace and checkout the right repos:
-  - source /opt/ros/indigo/setup.bash
+  - source /opt/ros/hydro/setup.bash
   - mkdir -p ~/catkin_ws/src
   - cd ~/catkin_ws/src
   - catkin_init_workspace
