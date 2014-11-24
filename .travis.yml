@@ -16,7 +16,7 @@ before_install:
   - wget http://packages.ros.org/ros.key -O - | sudo apt-key add -
   - sudo apt-get update -qq
   - sudo apt-get install ros-hydro-ros-base
-  - sudo apt-get install ros-hydro-move-base
+  - sudo apt-get install ros-hydro-move-base ros-hydro-ompl
   - sudo apt-get install python-catkin-pkg python-empy python-rospkg
   - pip install catkin_pkg
   - pip install rospkg
