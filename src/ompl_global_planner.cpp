@@ -309,7 +309,7 @@ bool OmplGlobalPlanner::makePlan(const geometry_msgs::PoseStamped& start, const 
     // oc::DecompositionPtr decomp(new My
     // ob::PlannerPtr planner(new oc::LBTRRT(si));
     // ob::PlannerPtr planner(new og::RRTConnect(si));
-    ob::PlannerPtr planner(new og::RRTstar(si));
+    ob::PlannerPtr planner(new oc::RRT(si));
     // ob::PlannerPtr planner(new og::PRMstar(si)); // works
     // ob::PlannerPtr planner(new og::PRM(si)); // segfault
     // ob::PlannerPtr planner(new og::TRRT(si));
