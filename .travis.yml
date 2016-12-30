@@ -12,11 +12,11 @@ compiler:
 before_install:
   - export CI_SOURCE_PATH=$(pwd)
   - lsb_release -a
-  - sudo sh -c 'echo "deb http://packages.ros.org/ros/ubuntu precise main" > /etc/apt/sources.list.d/ros-latest.list'
-  - wget http://packages.ros.org/ros.key -O - | sudo apt-key add -
+  - sudo sh -c 'echo "deb http://packages.ros.org/ros/ubuntu $(lsb_release -sc) main" > /etc/apt/sources.list.d/ros-latest.list'
+  - sudo apt-key adv --keyserver hkp://ha.pool.sks-keyservers.net:80 --recv-key 421C365BD9FF1F717815A3895523BAEEB01FA116
   - sudo apt-get update -qq
-  - sudo apt-get install ros-hydro-ros-base
-  - sudo apt-get install ros-hydro-move-base ros-hydro-ompl
+  - sudo apt-get install ros-kinetic-ros-base
+  - sudo apt-get install ros-kinetic-move-base ros-kinetic-ompl
   - sudo apt-get install python-catkin-pkg python-empy python-rospkg
   - pip install catkin_pkg
   - pip install rospkg
@@ -24,7 +24,7 @@ before_install:
   - rosdep update
 install:
   # make a workspace and checkout the right repos:
-  - source /opt/ros/hydro/setup.bash
+  - source /opt/ros/kinetic/setup.bash
   - mkdir -p ~/catkin_ws/src
   - cd ~/catkin_ws/src
   - catkin_init_workspace
