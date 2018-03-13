@@ -40,7 +40,7 @@ include_directories(
 add_library(ompl_global_planner_lib
   src/ompl_global_planner.cpp
 )
-target_link_libraries(ompl_global_planner_lib ${catkin_LIBRARIES})
+target_link_libraries(ompl_global_planner_lib ${catkin_LIBRARIES} ${OMPL_LIBRARIES})
 
 add_dependencies(ompl_global_planner_lib ${PROJECT_NAME}_gencfg)
 
