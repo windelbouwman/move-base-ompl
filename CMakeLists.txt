@@ -16,7 +16,7 @@ find_package(catkin REQUIRED
     base_local_planner
 )
 
-find_package(OMPL REQUIRED)
+find_package(ompl REQUIRED)
 
 catkin_package(
   INCLUDE_DIRS include
